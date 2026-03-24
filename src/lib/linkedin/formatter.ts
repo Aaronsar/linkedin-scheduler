@@ -1,100 +1,130 @@
 /**
- * Formate un texte brut en post LinkedIn professionnel
+ * Formate un texte brut en post LinkedIn professionnel.
  *
- * Regles de formatage :
- * - Premiere ligne = accroche forte (courte, percutante)
- * - Saut de ligne apres l'accroche pour creer le "voir plus"
- * - Paragraphes aeres (double saut de ligne)
- * - Fleches pour les listes a puces
+ * Transformations :
+ * - Chaque phrase sur sa propre ligne
+ * - Espaces entre les blocs de 2-3 phrases
+ * - Tirets convertis en fleches →
  * - Hashtags regroupes a la fin
+ * - Accroche isolee en premiere ligne
  */
 export function formatForLinkedIn(rawText: string): string {
   let text = rawText.trim()
+  if (!text) return text
 
-  // 1. Normalize line breaks
+  // Normalize
   text = text.replace(/\r\n/g, '\n')
 
-  // 2. Extract hashtags that might be inline
+  // Extract hashtags
   const hashtagRegex = /#[\w\u00C0-\u024F]+/g
   const inlineHashtags = text.match(hashtagRegex) || []
   text = text.replace(hashtagRegex, '').trim()
 
-  // 3. Split into paragraphs
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean)
+  // Split into existing paragraphs first
+  const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(Boolean)
 
-  if (paragraphs.length === 0) return rawText
+  const allLines: string[] = []
 
-  // 4. Process each paragraph
-  const formattedParagraphs = paragraphs.map((paragraph) => {
-    // Check if paragraph is a list (lines starting with -, *, •, numbers)
-    const lines = paragraph.split('\n').map((l) => l.trim()).filter(Boolean)
-    const isList = lines.length > 1 && lines.every((l) =>
+  for (const block of blocks) {
+    // Check if it's already a list
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+    const isList = lines.length > 1 && lines.every(l =>
       /^[-*•→▸▹]\s/.test(l) || /^\d+[.)]\s/.test(l)
     )
 
     if (isList) {
-      return lines
-        .map((line) => {
-          // Replace list markers with arrows
-          return line.replace(/^[-*•▸▹]\s+/, '→ ').replace(/^\d+[.)]\s+/, '→ ')
-        })
-        .join('\n')
+      // Convert list markers to arrows, keep as group
+      const listItems = lines.map(l =>
+        l.replace(/^[-*•▸▹]\s+/, '→ ').replace(/^\d+[.)]\s+/, '→ ')
+      )
+      allLines.push(listItems.join('\n'))
+      continue
     }
 
-    // Check if it's a mixed paragraph with some list items
-    const hasListItems = lines.some((l) =>
-      /^[-*•→▸▹]\s/.test(l) || /^\d+[.)]\s/.test(l)
-    )
+    // Split block into individual sentences
+    // Join lines into one string first
+    const joined = lines.join(' ')
 
-    if (hasListItems && lines.length > 1) {
-      return lines
-        .map((line) => {
-          if (/^[-*•▸▹]\s/.test(line) || /^\d+[.)]\s/.test(line)) {
-            return line.replace(/^[-*•▸▹]\s+/, '→ ').replace(/^\d+[.)]\s+/, '→ ')
-          }
-          return line
-        })
-        .join('\n')
+    // Split on sentence endings (. ! ?) followed by space or end
+    const sentences = joined
+      .split(/(?<=[.!?])\s+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+
+    if (sentences.length <= 1) {
+      // Single sentence or no sentence breaks - check for list items
+      const processed = lines.map(l => {
+        if (/^[-*•]\s+/.test(l)) return l.replace(/^[-*•]\s+/, '→ ')
+        if (/^\d+[.)]\s+/.test(l)) return l.replace(/^\d+[.)]\s+/, '→ ')
+        return l
+      })
+      allLines.push(processed.join('\n'))
+      continue
     }
 
-    return paragraph
-  })
+    // Multiple sentences - each one on its own line
+    for (const sentence of sentences) {
+      let s = sentence
+      if (/^[-*•]\s+/.test(s)) s = s.replace(/^[-*•]\s+/, '→ ')
+      if (/^\d+[.)]\s+/.test(s)) s = s.replace(/^\d+[.)]\s+/, '→ ')
+      allLines.push(s)
+    }
+  }
 
-  // 5. Build final post
+  if (allLines.length === 0) return rawText
+
+  // Build final post : hook + spaced groups
   let result = ''
 
-  // First paragraph is the hook - keep it short
-  const hook = formattedParagraphs[0]
-  result += hook
+  // First line = hook (always alone)
+  result = allLines[0]
 
-  // Add remaining paragraphs with double line breaks
-  for (let i = 1; i < formattedParagraphs.length; i++) {
-    result += '\n\n' + formattedParagraphs[i]
+  // Group remaining lines in blocks of 2-3, separated by blank lines
+  let groupCount = 0
+  for (let i = 1; i < allLines.length; i++) {
+    const line = allLines[i]
+    const isListLine = line.startsWith('→ ')
+    const prevIsListLine = i > 0 && allLines[i - 1]?.startsWith('→ ')
+
+    // Keep list items together
+    if (isListLine && prevIsListLine) {
+      result += '\n' + line
+      continue
+    }
+
+    // Add blank line before list blocks
+    if (isListLine && !prevIsListLine) {
+      result += '\n\n' + line
+      groupCount = 0
+      continue
+    }
+
+    // After list block, add blank line
+    if (!isListLine && prevIsListLine) {
+      result += '\n\n' + line
+      groupCount = 1
+      continue
+    }
+
+    // Regular sentences: blank line every 2-3 sentences
+    groupCount++
+    if (groupCount >= 3 || i === 1) {
+      result += '\n\n' + line
+      groupCount = 0
+    } else {
+      result += '\n' + line
+    }
   }
 
-  // 6. Add hashtags at the end
+  // Add hashtags
   if (inlineHashtags.length > 0) {
-    const uniqueHashtags = [...new Set(inlineHashtags)]
-    result += '\n\n' + uniqueHashtags.join(' ')
+    result += '\n\n' + [...new Set(inlineHashtags)].join(' ')
   }
 
-  // 7. Clean up excessive whitespace
+  // Clean up
   result = result.replace(/\n{3,}/g, '\n\n')
 
   return result.trim()
-}
-
-/**
- * Compte les caracteres visibles avant "voir plus" sur LinkedIn
- * LinkedIn coupe a environ 210 caracteres ou au premier saut de ligne
- */
-export function getHookLength(text: string): number {
-  const firstBreak = text.indexOf('\n\n')
-  if (firstBreak > 0 && firstBreak < 210) return firstBreak
-  return Math.min(text.length, 210)
 }
 
 /**
