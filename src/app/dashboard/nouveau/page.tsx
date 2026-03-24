@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Send, Clock, Save, Loader2, ImagePlus, X } from 'lucide-react'
+import { Send, Clock, Save, Loader2, ImagePlus, X, Wand2, Eye, EyeOff } from 'lucide-react'
 import type { LinkedInAccount, Template } from '@/lib/linkedin/types'
+import LinkedInPreview from '@/components/posts/LinkedInPreview'
+import { formatForLinkedIn, analyzeHook } from '@/lib/linkedin/formatter'
 
 export default function NouveauPostPage() {
   const [content, setContent] = useState('')
@@ -21,6 +23,7 @@ export default function NouveauPostPage() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -220,10 +223,57 @@ export default function NouveauPostPage() {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0a66c2] focus:border-transparent resize-none"
             placeholder="Ecrivez votre post LinkedIn ici..."
           />
-          <p className="text-xs text-gray-500 mt-1 text-right">
-            {content.length} / 3000 caracteres
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setContent(formatForLinkedIn(content))}
+                disabled={!content.trim()}
+                className="flex items-center gap-1 text-xs text-[#0a66c2] hover:bg-blue-50 px-2 py-1 rounded transition-colors disabled:opacity-40"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                Formater pour LinkedIn
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPreview(!showPreview)}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded transition-colors"
+              >
+                {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showPreview ? 'Masquer apercu' : 'Apercu LinkedIn'}
+              </button>
+            </div>
+            <span className="text-xs text-gray-500">{content.length} / 3000</span>
+          </div>
+
+          {/* Hook analysis */}
+          {content.trim() && (() => {
+            const analysis = analyzeHook(content)
+            if (!analysis.isGoodLength && analysis.suggestion) {
+              return (
+                <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg mt-2">
+                  {analysis.suggestion}
+                </p>
+              )
+            }
+            return null
+          })()}
         </div>
+
+        {/* LinkedIn Preview */}
+        {showPreview && content.trim() && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Apercu LinkedIn
+            </label>
+            <LinkedInPreview
+              content={content}
+              authorName={accounts.find(a => a.id === accountId)?.linkedin_name || 'Vous'}
+              authorPicture={accounts.find(a => a.id === accountId)?.linkedin_picture_url}
+              imageUrl={imagePreview}
+            />
+          </div>
+        )}
 
         {/* Image upload */}
         <div>
