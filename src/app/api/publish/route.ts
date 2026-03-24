@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
         account.access_token,
         authorUrn,
         post.content,
-        post.visibility
+        post.visibility,
+        post.image_url
       )
 
       if (result.success) {

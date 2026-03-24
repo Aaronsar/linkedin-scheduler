@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Send, Clock, Save, Loader2 } from 'lucide-react'
+import { Send, Clock, Save, Loader2, ImagePlus, X } from 'lucide-react'
 import type { LinkedInAccount, Template } from '@/lib/linkedin/types'
 
 export default function NouveauPostPage() {
@@ -18,6 +18,10 @@ export default function NouveauPostPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -36,6 +40,57 @@ export default function NouveauPostPage() {
     load()
   }, [])
 
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setError('Seules les images sont acceptees (JPG, PNG, GIF)')
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('L\'image ne doit pas depasser 10 Mo')
+      return
+    }
+
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+    setError('')
+  }
+
+  function removeImage() {
+    setImageFile(null)
+    if (imagePreview) URL.revokeObjectURL(imagePreview)
+    setImagePreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  async function uploadImage(): Promise<string | null> {
+    if (!imageFile) return null
+
+    setUploadingImage(true)
+    const fileExt = imageFile.name.split('.').pop()
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+    const filePath = `posts/${fileName}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('post-images')
+      .upload(filePath, imageFile)
+
+    setUploadingImage(false)
+
+    if (uploadError) {
+      throw new Error(`Erreur upload image: ${uploadError.message}`)
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('post-images')
+      .getPublicUrl(filePath)
+
+    return publicUrl
+  }
+
   async function handleSubmit(status: 'draft' | 'pending') {
     if (!content.trim()) {
       setError('Le contenu du post est requis')
@@ -49,49 +104,61 @@ export default function NouveauPostPage() {
     setError('')
     setLoading(true)
 
-    let scheduled_at: string | null = null
-    if (status === 'pending') {
-      if (scheduleMode === 'schedule' && scheduledDate && scheduledTime) {
-        scheduled_at = new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
-      } else {
-        scheduled_at = new Date().toISOString()
+    try {
+      // Upload image if present
+      let imageUrl: string | null = null
+      if (imageFile) {
+        imageUrl = await uploadImage()
       }
-    }
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setError('Non authentifie')
+      let scheduled_at: string | null = null
+      if (status === 'pending') {
+        if (scheduleMode === 'schedule' && scheduledDate && scheduledTime) {
+          scheduled_at = new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
+        } else {
+          scheduled_at = new Date().toISOString()
+        }
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setError('Non authentifie')
+        setLoading(false)
+        return
+      }
+
+      const { error: insertError } = await supabase.from('posts').insert({
+        user_id: user.id,
+        linkedin_account_id: accountId || null,
+        content: content.trim(),
+        visibility,
+        status,
+        scheduled_at,
+        image_url: imageUrl,
+      })
+
+      if (insertError) {
+        setError(insertError.message)
+        setLoading(false)
+        return
+      }
+
+      setSuccess(
+        status === 'draft'
+          ? 'Brouillon enregistre !'
+          : scheduleMode === 'schedule'
+          ? 'Post planifie !'
+          : 'Post en cours de publication...'
+      )
       setLoading(false)
-      return
-    }
 
-    const { error: insertError } = await supabase.from('posts').insert({
-      user_id: user.id,
-      linkedin_account_id: accountId || null,
-      content: content.trim(),
-      visibility,
-      status,
-      scheduled_at,
-    })
-
-    if (insertError) {
-      setError(insertError.message)
+      setTimeout(() => {
+        router.push('/dashboard/posts')
+      }, 1500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue')
       setLoading(false)
-      return
     }
-
-    setSuccess(
-      status === 'draft'
-        ? 'Brouillon enregistre !'
-        : scheduleMode === 'schedule'
-        ? 'Post planifie !'
-        : 'Post en cours de publication...'
-    )
-    setLoading(false)
-
-    setTimeout(() => {
-      router.push('/dashboard/posts')
-    }, 1500)
   }
 
   function loadTemplate(template: Template) {
@@ -156,6 +223,52 @@ export default function NouveauPostPage() {
           <p className="text-xs text-gray-500 mt-1 text-right">
             {content.length} / 3000 caracteres
           </p>
+        </div>
+
+        {/* Image upload */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Image (optionnel)
+          </label>
+
+          {imagePreview ? (
+            <div className="relative inline-block">
+              <img
+                src={imagePreview}
+                alt="Apercu"
+                className="max-h-48 rounded-lg border border-gray-200"
+              />
+              <button
+                type="button"
+                onClick={removeImage}
+                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-[#0a66c2] hover:text-[#0a66c2] transition-colors w-full justify-center"
+            >
+              <ImagePlus className="w-5 h-5" />
+              Ajouter une image
+            </button>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageSelect}
+            className="hidden"
+          />
+          {uploadingImage && (
+            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Upload en cours...
+            </p>
+          )}
         </div>
 
         {/* Account selector */}
