@@ -53,6 +53,7 @@ export interface Post {
   error_message: string | null
   retry_count: number
   template_id: string | null
+  image_url: string | null
   created_at: string
   updated_at: string
   linkedin_accounts?: LinkedInAccount
