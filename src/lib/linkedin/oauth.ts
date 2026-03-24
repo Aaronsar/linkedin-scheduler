@@ -11,6 +11,7 @@ export function generateAuthUrl(state: string): string {
     redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/linkedin/callback`,
     state,
     scope: 'openid profile email w_member_social',
+    prompt: 'login',
   })
 
   return `${LINKEDIN_AUTH_URL}?${params.toString()}`
