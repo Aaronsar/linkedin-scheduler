@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, PenSquare, FileText, Users, BookTemplate, Menu, X } from 'lucide-react'
+import { LayoutDashboard, PenSquare, FileText, Users, BookTemplate, CalendarDays, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 const navItems = [
   { href: '/dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
   { href: '/dashboard/nouveau', label: 'Nouveau post', icon: PenSquare },
+  { href: '/dashboard/calendrier', label: 'Calendrier', icon: CalendarDays },
   { href: '/dashboard/posts', label: 'Publications', icon: FileText },
   { href: '/dashboard/comptes', label: 'Comptes LinkedIn', icon: Users },
   { href: '/dashboard/modeles', label: 'Modeles', icon: BookTemplate },
