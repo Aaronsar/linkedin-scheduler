@@ -56,7 +56,16 @@ export default async function ComptesPage() {
                     </div>
                   )}
                   <div>
-                    <p className="font-semibold">{account.linkedin_name || 'Compte LinkedIn'}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold">{account.linkedin_name || 'Compte LinkedIn'}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        account.account_type === 'page'
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {account.account_type === 'page' ? 'Page' : 'Personnel'}
+                      </span>
+                    </div>
                     <p className="text-sm text-gray-500">{account.linkedin_email || ''}</p>
                   </div>
                 </div>

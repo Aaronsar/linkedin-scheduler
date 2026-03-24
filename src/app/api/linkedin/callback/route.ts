@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { exchangeCodeForTokens, fetchLinkedInProfile } from '@/lib/linkedin/oauth'
+import { fetchAdministeredOrganizations } from '@/lib/linkedin/organizations'
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -53,8 +54,7 @@ export async function GET(request: NextRequest) {
       Date.now() + tokens.expires_in * 1000
     ).toISOString()
 
-    // Upsert LinkedIn account (store tokens directly for simplicity)
-    // In production, use Supabase Vault for encryption
+    // Upsert personal LinkedIn account
     const { error: upsertError } = await supabase
       .from('linkedin_accounts')
       .upsert(
@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
           token_expires_at: tokenExpiresAt,
           scopes: tokens.scope,
           is_active: true,
+          account_type: 'personal',
           updated_at: new Date().toISOString(),
         },
         {
@@ -80,6 +81,32 @@ export async function GET(request: NextRequest) {
       console.error('Error upserting LinkedIn account:', upsertError)
       return NextResponse.redirect(
         `${appUrl}/dashboard/comptes?error=db_error`
+      )
+    }
+
+    // Try to fetch administered Pages (requires Community Management API)
+    const organizations = await fetchAdministeredOrganizations(tokens.access_token)
+    for (const org of organizations) {
+      const orgUrn = `urn:li:organization:${org.id}`
+      await supabase.from('linkedin_accounts').upsert(
+        {
+          user_id: user.id,
+          linkedin_person_urn: personUrn,
+          linkedin_name: `📄 ${org.localizedName}`,
+          linkedin_email: profile.email,
+          linkedin_picture_url: org.logoUrl || profile.picture,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token || null,
+          token_expires_at: tokenExpiresAt,
+          scopes: tokens.scope,
+          is_active: true,
+          account_type: 'page',
+          organization_urn: orgUrn,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'user_id,linkedin_person_urn',
+        }
       )
     }
 

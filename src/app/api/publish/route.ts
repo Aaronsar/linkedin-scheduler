@@ -47,9 +47,14 @@ export async function POST(request: NextRequest) {
         throw new Error('Token expire - veuillez reconnecter votre compte LinkedIn')
       }
 
+      // Use organization URN for pages, person URN for personal accounts
+      const authorUrn = account.account_type === 'page' && account.organization_urn
+        ? account.organization_urn
+        : account.linkedin_person_urn
+
       const result = await publishTextPost(
         account.access_token,
-        account.linkedin_person_urn,
+        authorUrn,
         post.content,
         post.visibility
       )
