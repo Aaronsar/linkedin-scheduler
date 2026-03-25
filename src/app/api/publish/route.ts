@@ -2,16 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { publishTextPost } from '@/lib/linkedin/api'
 
-// This endpoint is called by pg_cron via pg_net to publish scheduled posts
-export async function POST(request: NextRequest) {
-  // Verify authorization (service role key or custom secret)
-  const authHeader = request.headers.get('authorization')
-  const expectedToken = process.env.CRON_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!expectedToken || !authHeader?.includes(expectedToken)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+// Shared publish logic
+async function publishPendingPosts() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -28,7 +20,7 @@ export async function POST(request: NextRequest) {
     .limit(10)
 
   if (fetchError || !posts || posts.length === 0) {
-    return NextResponse.json({ message: 'No posts to publish', error: fetchError })
+    return { message: 'No posts to publish', count: 0, error: fetchError }
   }
 
   // Mark as publishing
@@ -42,12 +34,10 @@ export async function POST(request: NextRequest) {
       const account = post.linkedin_accounts
       if (!account) throw new Error('Compte LinkedIn introuvable')
 
-      // Check token expiry
       if (new Date(account.token_expires_at) < new Date()) {
         throw new Error('Token expire - veuillez reconnecter votre compte LinkedIn')
       }
 
-      // Use organization URN for pages, person URN for personal accounts
       const authorUrn = account.account_type === 'page' && account.organization_urn
         ? account.organization_urn
         : account.linkedin_person_urn
@@ -87,5 +77,32 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ results })
+  return { results, count: posts.length }
+}
+
+// Vercel Cron calls GET
+export async function GET(request: NextRequest) {
+  // Verify Vercel Cron secret
+  const authHeader = request.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const result = await publishPendingPosts()
+  return NextResponse.json(result)
+}
+
+// Manual trigger via POST
+export async function POST(request: NextRequest) {
+  const authHeader = request.headers.get('authorization')
+  const expectedToken = process.env.CRON_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!expectedToken || !authHeader?.includes(expectedToken)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const result = await publishPendingPosts()
+  return NextResponse.json(result)
 }
